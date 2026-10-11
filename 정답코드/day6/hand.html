@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 손 인식 실험실</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+    background: #0f1d2e;
+    color: #ffffff;
+  }
+  header { padding: 14px 24px; background: #f28c28; color: #1b1b1b; }
+  header h1 { margin: 0; font-size: 28px; }
+  header p { margin: 4px 0 0; font-size: 16px; }
+  #status {
+    margin: 16px 20px 0; padding: 12px 18px; border-radius: 12px;
+    background: #1c2f47; border-left: 6px solid #ffb547; font-size: 19px; line-height: 1.5;
+  }
+  main { display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; align-items: flex-start; }
+
+  /* 카메라 화면 */
+  .camera {
+    position: relative; flex: 1 1 560px; max-width: 860px;
+    background: #000; border-radius: 16px; overflow: hidden; aspect-ratio: 4 / 3;
+  }
+  .camera canvas { width: 100%; height: 100%; display: block; }
+  .camera video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  #cover {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 24px; color: #cfd8e3; text-align: center; padding: 20px;
+  }
+
+  /* 오른쪽 정보판 */
+  .panel { flex: 1 1 300px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: #1c2f47; border-radius: 16px; padding: 16px 18px; }
+  .label { font-size: 18px; color: #9fb3c8; margin-bottom: 6px; }
+  #count { font-size: 128px; font-weight: 800; line-height: 1; text-align: center; color: #ffb547; }
+  #gesture { font-size: 40px; font-weight: 700; text-align: center; min-height: 52px; }
+  button {
+    font-family: inherit; font-size: 22px; font-weight: 700; padding: 14px 18px;
+    border: none; border-radius: 12px; cursor: pointer; background: #ffb547; color: #1b1b1b;
+  }
+  button:disabled { background: #4a5a6e; color: #c9d3de; cursor: wait; }
+  .check { font-size: 18px; display: flex; gap: 8px; align-items: center; }
+  .check input { width: 22px; height: 22px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>✋ AI 손 인식 실험실</h1>
+  <p>카메라에 손바닥을 비추면 AI가 손가락 마디 21개 점을 찾습니다. (영상은 내 컴퓨터 안에서만 처리)</p>
+</header>
+<div id="status">AI 모델 불러오는 중… (처음 한 번은 10초~1분 소요)</div>
+
+<main>
+  <div class="camera">
+    <video id="video" playsinline muted></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div id="cover">📷 오른쪽 <b>&nbsp;카메라 켜기&nbsp;</b> 버튼 클릭</div>
+  </div>
+
+  <div class="panel">
+    <button id="startBtn" disabled>⏳ AI 준비 중...</button>
+    <div class="card">
+      <div class="label">펴진 손가락</div>
+      <div id="count">-</div>
+    </div>
+    <div class="card">
+      <div class="label">손 모양</div>
+      <div id="gesture">-</div>
+    </div>
+    <label class="check"><input type="checkbox" id="showNumbers"> 점 번호(0~20) 보기</label>
+  </div>
+</main>
+
+<!-- 라이브러리를 못 불러올 때(인터넷 문제) 안내 -->
+<script>
+  setTimeout(function () {
+    if (!window.handAppStarted) {
+      document.getElementById("status").textContent =
+        "❌ AI 라이브러리 불러오기 실패. 인터넷 연결 확인 후 새로고침(F5)";
+    }
+  }, 20000);
+</script>
+
+<script type="module">
+  import { FilesetResolver, GestureRecognizer, DrawingUtils }
+    from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
+  window.handAppStarted = true;
+
+  // ── 주소 설정 ─────────────────────────────────────────
+  const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
+  const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+
+  // ── 화면 요소 ─────────────────────────────────────────
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const drawer = new DrawingUtils(ctx);
+  const startBtn = document.getElementById("startBtn");
+  const countEl = document.getElementById("count");
+  const gestureEl = document.getElementById("gesture");
+  const statusEl = document.getElementById("status");
+  const coverEl = document.getElementById("cover");
+  const showNumbers = document.getElementById("showNumbers");
+
+  // AI가 알려 주는 손 모양 이름 → 한국어 + 이모지
+  const GESTURE_NAMES = {
+    Closed_Fist: "✊ 주먹",
+    Open_Palm: "🖐 보",
+    Pointing_Up: "☝ 하나",
+    Victory: "✌ 브이",
+    Thumb_Up: "👍 최고",
+    Thumb_Down: "👎 별로",
+    ILoveYou: "🤟 사랑해",
+  };
+
+  let recognizer = null;
+  let lastVideoTime = -1;
+  let candidate = null;      // 지금 보이는 손가락 개수 (아직 확정 전)
+  let candidateSince = 0;    // 그 개수가 처음 보인 시각
+  let shownCount = null;     // 화면에 확정해서 보여 주는 개수
+
+  // ── 1) AI 모델 불러오기 ────────────────────────────────
+  async function loadModel() {
+    const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    const options = (delegate) => ({
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: delegate },
+      runningMode: "VIDEO",
+      numHands: 1,
+    });
+    try {
+      recognizer = await GestureRecognizer.createFromOptions(vision, options("GPU"));
+    } catch (e) {
+      // 그래픽 가속(GPU)이 안 되는 노트북이면 CPU로 다시 시도
+      recognizer = await GestureRecognizer.createFromOptions(vision, options("CPU"));
+    }
+  }
+
+  loadModel().then(() => {
+    startBtn.disabled = false;
+    startBtn.textContent = "📷 카메라 켜기";
+    statusEl.textContent = "✅ AI 준비 완료. '카메라 켜기' 버튼 클릭";
+  }).catch((e) => {
+    console.error(e);
+    statusEl.textContent = "❌ AI 모델 불러오기 실패. 인터넷 연결 확인 후 새로고침(F5)";
+  });
+
+  // ── 2) 카메라 켜기 ─────────────────────────────────────
+  startBtn.addEventListener("click", async () => {
+    startBtn.disabled = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }, audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      coverEl.style.display = "none";
+      startBtn.textContent = "🎥 카메라 켜짐";
+      statusEl.textContent = "🖐 카메라에 손바닥 비추기";
+      requestAnimationFrame(loop);
+    } catch (e) {
+      console.error(e);
+      startBtn.disabled = false;
+      if (e.name === "NotAllowedError") {
+        statusEl.textContent = "❌ 카메라 권한 차단 상태. 주소창 왼쪽 아이콘 → 카메라 '허용' → 새로고침(F5)";
+      } else if (e.name === "NotReadableError") {
+        statusEl.textContent = "❌ 다른 프로그램(줌, 카메라 앱 등)이 카메라 사용 중. 해당 프로그램 종료 후 다시 클릭";
+      } else {
+        statusEl.textContent = "❌ 카메라 켜기 실패: " + e.message;
+      }
+    }
+  });
+
+  // ── 3) 손가락 개수 세기 ────────────────────────────────
+  // 두 점 사이의 거리
+  function dist(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+  }
+
+  // 점 21개(p)를 보고 펴진 손가락 개수(0~5)를 셉니다.
+  function countFingers(p) {
+    let count = 0;
+    // 엄지: 손끝(4)이 새끼손가락 뿌리(17)에서 엄지 둘째 마디(3)보다 멀면 '펴짐'
+    if (dist(p[4], p[17]) > dist(p[3], p[17])) count++;
+    // 검지·중지·약지·새끼: 손끝이 손목(0)에서 둘째 마디보다 멀면 '펴짐'
+    const tips = [8, 12, 16, 20];   // 손끝 번호
+    const pips = [6, 10, 14, 18];   // 둘째 마디 번호
+    for (let i = 0; i < 4; i++) {
+      if (dist(p[tips[i]], p[0]) > dist(p[pips[i]], p[0])) count++;
+    }
+    return count;
+  }
+
+  // ── 4) 매 화면마다 반복 ────────────────────────────────
+  function loop() {
+    if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      try {
+        const result = recognizer.recognizeForVideo(video, performance.now());
+        drawFrame(result);
+        updateInfo(result);
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "⚠️ 손 인식 중 오류 발생. 새로고침(F5) 필요";
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // 카메라 영상 + 손 점 그리기 (거울처럼 좌우 반전)
+  function drawFrame(result) {
+    const w = canvas.width, h = canvas.height;
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
+
+    for (const hand of result.landmarks) {
+      const mirrored = hand.map((pt) => ({ ...pt, x: 1 - pt.x }));
+      drawer.drawConnectors(mirrored, GestureRecognizer.HAND_CONNECTIONS, { color: "#ffffff", lineWidth: 4 });
+      drawer.drawLandmarks(mirrored, { color: "#ff7a00", fillColor: "#ffb547", lineWidth: 2, radius: 6 });
+      if (showNumbers.checked) {
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillStyle = "#00e0ff";
+        mirrored.forEach((pt, i) => ctx.fillText(String(i), pt.x * w + 8, pt.y * h - 8));
+      }
+    }
+  }
+
+  // 손가락 개수와 손 모양 이름 보여 주기
+  function updateInfo(result) {
+    let fingers = -1;   // -1 = 손이 안 보임
+    if (result.landmarks.length === 0) {
+      gestureEl.textContent = "손이 보이지 않음";
+    } else {
+      const points = (result.worldLandmarks && result.worldLandmarks[0]) || result.landmarks[0];
+      fingers = countFingers(points);
+
+      // AI가 손 모양을 확실히(60% 이상) 알아본 경우 이름 보여 주기
+      const top = result.gestures[0] && result.gestures[0][0];
+      const sure = top && top.score >= 0.6 ? top.categoryName : "";
+      gestureEl.textContent = GESTURE_NAMES[sure] || "🤔 (모르는 모양)";
+      // 주먹·엄지척은 AI의 손 모양 판단이 더 정확하므로 그 결과 사용
+      if (sure === "Closed_Fist") fingers = 0;
+      if (sure === "Thumb_Up" || sure === "Thumb_Down") fingers = 1;
+    }
+    stabilize(fingers);
+  }
+
+  // 같은 개수가 0.3초 이상 유지될 때만 화면 숫자 변경 (깜빡임 방지)
+  function stabilize(fingers) {
+    const now = performance.now();
+    if (fingers !== candidate) {
+      candidate = fingers;
+      candidateSince = now;
+      return;
+    }
+    if (now - candidateSince < 300 || fingers === shownCount) return;
+    shownCount = fingers;
+    if (fingers < 0) {
+      countEl.textContent = "-";
+      statusEl.textContent = "🖐 카메라에 손바닥 비추기";
+    } else {
+      countEl.textContent = String(fingers);
+      statusEl.textContent = "👀 손가락 " + fingers + "개 인식";
+    }
+  }
+</script>
+</body>
+</html>

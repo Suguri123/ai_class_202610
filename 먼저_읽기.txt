@@ -1,0 +1,31 @@
+﻿AI 에이전트와 피지컬 컴퓨팅 입문 · 강의자료 부록
+
+정답코드/           수강생 노트북의 C:\ai-class와 같은 구조. 차시마다 폴더 하나. AI 비서는 그날 폴더에서 씀(1차시 까만 창 agy, 2차시부터 Antigravity IDE에서 File → Open Folder).
+                     폴더마다 규칙표(AGENTS.md)가 하나씩 있음(1·2차시는 기본 규칙, 3차시부터 아두이노 규칙 포함).
+                     막힌 차시의 파일만 같은 위치에 복사해서 사용. html 파일은 크롬 주소창에 경로를 넣어 바로 열기(서버 필요 없음).
+                     hand·hand_led는 인터넷 연결 필요(AI 모델 내려받기). 스케치(.ino)는 폴더째 아두이노 IDE에서 열고 업로드.
+  day1/              index.html(자기소개 페이지 예시)
+  day2/              index.html(자기소개 + '손 인식 체험하기' 버튼), hand.html(손 인식) → 이 폴더의 파일을 깃허브 저장소(아이디.github.io)에 올림
+  day3/              blink_builtin · blink9 · sos 스케치
+  day4/              led_test · traffic · wave · breathe · led_receiver 스케치
+  day5/              hand.html·led_receiver(2·4차시에서 복사), hand_led.html(손 인식 + 아두이노 연결, 6차시 작품의 리모컨)
+  day6/              작품 A~D 스케치(project_party · project_piano · project_door · project_mood), hand_led.html,
+                     index.html(내 사이트 + 응원 방명록), hand.html.
+                     방명록 index.html은 const firebaseConfig 한 줄을 내 Firebase 설정값으로 바꾼 뒤
+                     깃허브 저장소에 다시 올리기(Add file → Upload files → Commit changes)
+Firebase_규칙/       firestore_rules_guestbook.txt: 수업 후 30일 안에 내 Firebase의 Firestore '규칙' 탭에 붙여넣고 게시하는 방명록 규칙
+                     (누구나 읽기·새 글 쓰기 가능, 고치기·지우기 불가, 이름 20자·한마디 100자까지. 기간 제한 없이 계속 동작)
+실습사이트_오프라인.html  공유 링크 대신 USB·드라이브로 나눠 줄 때 쓰는 같은 실습 사이트(왼쪽 메뉴로 차시·단계 이동, 문제 해결·화면 보여주기·용어 사전 포함)
+디자인/              기본_색상_템플릿.pptx: 실습 사이트 기준 색(청록 계열, LottieFiles 홈페이지 색 참고. 왼쪽 메뉴는 청록 바탕, AI 비서 상자는 파랑). PowerPoint 테마 색으로도 설정되어 있음
+배선도/              슬라이드·사이트에 쓰인 배선도 원본 그림(PNG)
+
+웹 공유(2차시)      GitHub Pages(공개 저장소 무료). github.com/new에서 저장소 이름을 '아이디.github.io'로 만들고,
+                     day2 폴더 안의 파일을 올린 뒤(Commit changes) Settings → Pages에서 main · / (root) 저장.
+                     반영까지 1~2분(최대 10분). 수강생은 2차시 전까지 github.com 이메일 가입 필요(아이디가 주소가 됨).
+응원 방명록(6차시)  Firebase Cloud Firestore 무료(Spark) 요금제, 카드 등록 없음. 수강생이 각자 구글 계정으로
+                     console.firebase.google.com에서 프로젝트 만들기 → 웹 앱 등록 → 설정값(firebaseConfig) 복사 →
+                     Firestore 데이터베이스 만들기(위치 asia-northeast3 (Seoul), 테스트 모드). 테스트 모드는 약 30일 뒤 잠김.
+                     강사는 수업 전에 자기 계정으로 같은 순서를 한 번 해 보기 권장(사이트 6차시 4단계).
+
+파일 종류: .html 뼈대(내용) · .css 꾸미기 · .js 동작 · .md 설명서
+핀 배치: 빨강 LED 9번 · 노랑 10번 · 초록 11번 · 부저 8번 · 서보 7번 · RGB 3/5/6번 · 시리얼 9600
